@@ -624,10 +624,10 @@ class BlockReaderBase(INode):
         # Behaviour
         self.acceptchildren = acceptchildren                            # accept childreader
         self.acceptunimplementedchildren = acceptunimplementedchildren  # accept functional block, without corresponding childreader (as text)
-        self.preferchildoverhorizontal = True       # if true and both a next horizontalreader and a next child reader present 
-                                                    # choose the childreader
-        self.takehorizontalpreference = True        # useful when reader can both occur as a child or horizontal
-        #self.allowcommaEOL = True  # TODO
+        self.preferchildoversibling = True       # if true and both a next horizontalreader and a next child reader present 
+                                                 # choose the childreader
+        self.takesiblingpreference = True        # useful when same reader can both occur as a child or sibling
+        #self.allowcommaEOL = True      # TODO
         self.stripEOL = True
                
     def matchheader(self, line):
@@ -668,7 +668,7 @@ class BlockReaderBase(INode):
         self.startlinenumber = startlinenumber
         self.content = []
           
-    def read(self, line, nexthorizontalreader = None):
+    def read(self, line, nextsiblingeader = None):
         """
          Read the line (or header) which is part of this functional block
 
@@ -677,7 +677,7 @@ class BlockReaderBase(INode):
          line : string
             A line of text
          nextchildreader : BlockReaderBase
-            Another reader (horizontal relationship) which also matches the line of text as a header
+            Another reader (sibling relationship) which also matches the line of text as a header
             and can thus potentially take-over parsing
             
          Returns
@@ -694,14 +694,14 @@ class BlockReaderBase(INode):
         if self.stripEOL:
             line = line.rstrip("\n")
         if LOG_LEVEL >= 2:
-            print("[{:^20s}] received line ({:d}): \"{:s}\" and nexthorizontalreader: {:s}".format(self.getid(), self.getendlinenumber(), line, str(nexthorizontalreader)))
+            print("[{:^20s}] received line ({:d}): \"{:s}\" and nextsiblingeader: {:s}".format(self.getid(), self.getendlinenumber(), line, str(nextsiblingeader)))
         
         if self.getheader() is None:
             self.header = self.parameterizeheader(line)
             if LOG_LEVEL >= 2:
                 print("[{:^20s}] set header".format(self.getid()))
         else:
-            if self.doterminate(line, nexthorizontalreader):
+            if self.doterminate(line, nextsiblingeader):
                 if LOG_LEVEL >= 2:
                     print("[{:^20s}] terminated".format(self.getid()))
                 self.stopreading()
@@ -735,7 +735,7 @@ class BlockReaderBase(INode):
                         
                         if LOG_LEVEL >= 2:
                             print("[{:^20s}] redo".format(self.getid()))
-                        return self.read(line, nexthorizontalreader)
+                        return self.read(line, nextsiblingeader)
         self._nlines += 1   
         return ReaderExitCode.CONTINUE
     
@@ -806,7 +806,7 @@ class BlockReaderBase(INode):
             self._stopactivechildreader()
         self._isreading = False
         
-    def doterminate(self, line, nexthorizontalreader):
+    def doterminate(self, line, nextsiblingeader):
         """
          Determine if this reader can handle the line,
          or whether a potential next reader should take-over
@@ -816,7 +816,7 @@ class BlockReaderBase(INode):
          line : string
             A line of text (which is a potential header of an upcoming functional block)
          nextreader: BlockReaderBase
-            Another reader on the same level (horizontal relation), which wants to take-over parsing
+            Another reader on the same level (sibling), which wants to take-over parsing
          
          Returns
          -------
@@ -825,15 +825,15 @@ class BlockReaderBase(INode):
          
         """
         hasnextchildreader = self._resolvechildreader(line) is not None
-        if (nexthorizontalreader is not None):
+        if (nextsiblingeader is not None):
             if (self.isfunctionalblock(line)):
                 # Dismiss next reader if a child can handle it
                 if (hasnextchildreader):
-                    # refuse next horizontal reader if:
-                    # 1. current reader insists on preference for childreader over horizontalreader
-                    # 2. next horizontalreader does not want preference
-                    if (self.preferchildoverhorizontal \
-                            or not nexthorizontalreader.takehorizontalpreference): 
+                    # refuse next sibling reader if:
+                    # 1. current reader insists on preference for childreader over siblingreader
+                    # 2. next siblingreader does not want preference
+                    if (self.preferchildoversibling \
+                            or not nextsiblingeader.takesiblingpreference): 
                         return False
                        
                 # next block
@@ -964,7 +964,7 @@ class BlockReaderBase(INode):
          number : int
             New Start line number
          nextreader: BlockReaderBase
-            Another reader on the same level (horizontal relation), which wants to take-over parsing
+            Another reader on the same level (sibling), which wants to take-over parsing
          
          Returns
          -------
@@ -1143,13 +1143,13 @@ class IncludeReader(RootReader):
         super().__init__(childreaderresolver)
         self.name = "Include"
         self.inline = inline
-        self.takehorizontalpreference = False
+        self.takesiblingpreference = False
 
     def matchheader(self, line):
         return not line.lstrip().startswith("**") \
                 and line.lstrip("* ").lower().startswith("include") 
     
-    def read(self, line, nexthorizontalreader = None):
+    def read(self, line, nextsiblingeader = None):
         if self.getheader() == None:
             if LOG_LEVEL >=1:
                 print("INCLUDE", line)
@@ -1164,7 +1164,7 @@ class IncludeReader(RootReader):
             self.parseinputfile(infile)
             return ReaderExitCode.DONE
         else:
-            return super().read(line, nexthorizontalreader)
+            return super().read(line, nextsiblingreader)
     
     def setinline(self, inline):
         """
@@ -1508,14 +1508,14 @@ class BlockReaderAssembly(BlockReaderBase):
         else:
             return super().getid()
     
-    def read(self, line, nexthorizontalreader = None):
+    def read(self, line, nextsiblingreader = None):
         if ("end assembly" in line.lower()):
             self.stopreading()
             self.getcontent().append(line)
             self._nlines += 1
             return ReaderExitCode.DONE
         else:
-            super().read(line, nexthorizontalreader)
+            super().read(line, nextsiblingeader)
     
     def doterminate(self, line, nextreader = None):
         # gready
@@ -1538,16 +1538,16 @@ class BlockReaderPart(BlockReaderBase):
         else:
             return super().getid()
             
-    def read(self, line, nexthorizontalreader = None):
+    def read(self, line, nextsiblingeader = None):
         if ("end part" in line.lower()):
             self.stopreading()
             self.getcontent().append(line)
             self._nlines += 1
             return ReaderExitCode.DONE
         else:
-            super().read(line, nexthorizontalreader)
+            super().read(line, nextsiblingeader)
     
-    def doterminate(self, line, nexthorizontalreader = None):
+    def doterminate(self, line, nextsiblingeader = None):
         # gready
         return False
 
